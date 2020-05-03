@@ -3,8 +3,8 @@
 # Copyright 2017 Johns Hopkins University (Shinji Watanabe)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-. ./path.sh
-. ./cmd.sh
+. ./path.sh || exit 1;
+. ./cmd.sh || exit 1;
 
 # general configuration
 backend=pytorch
@@ -20,6 +20,9 @@ seed=1
 
 # feature configuration
 do_delta=false
+
+# sample filtering
+min_io_delta=4  # samples with `len(input) - len(output) * min_io_ratio < min_io_delta` will be removed.
 
 # config files
 preprocess_config=conf/no_preprocess.yaml  # use conf/specaug.yaml for data augmentation
@@ -45,9 +48,6 @@ wsj1=/export/corpora5/LDC/LDC94S13B
 tag="" # tag for managing experiments.
 
 . utils/parse_options.sh || exit 1;
-
-. ./path.sh
-. ./cmd.sh
 
 # Set bash to 'debug' mode, it will exit on :
 # -e 'error', -u 'undefined variable', -o ... 'error in pipeline', -x 'print commands',
@@ -137,6 +137,18 @@ if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
         data2json.sh --feat ${feat_recog_dir}/feats.scp \
             --nlsyms ${nlsyms} data/${rtask} ${dict} > ${feat_recog_dir}/data.json
     done
+
+    ### Filter out short samples which lead to `loss_ctc=inf` during training
+    ###  with the specified configuration.
+    # Samples satisfying `len(input) - len(output) * min_io_ratio < min_io_delta` will be pruned.
+    local/filtering_samples.py \
+        --config ${train_config} \
+        --preprocess-conf ${preprocess_config} \
+        --data-json ${feat_tr_dir}/data.json \
+        --mode-subsample "asr" \
+        --arch-subsample "rnn" \
+        ${min_io_delta:+--min-io-delta $min_io_delta} \
+        --output-json-path ${feat_tr_dir}/data.json
 fi
 
 # It takes about one day. If you just want to do end-to-end ASR without LM,
@@ -181,10 +193,6 @@ if [ ${stage} -le 3 ] && [ ${stop_stage} -ge 3 ]; then
         cat ${lmdatadir}/train_trans.txt ${lmdatadir}/train_others.txt > ${lmdatadir}/train.txt
     fi
 
-    # use only 1 gpu
-    if [ ${ngpu} -gt 1 ]; then
-        echo "LM training does not support multi-gpu. signle gpu will be used."
-    fi
     ${cuda_cmd} --gpu ${ngpu} ${lmexpdir}/train.log \
         lm_train.py \
         --config ${lm_config} \

@@ -3,8 +3,8 @@
 # Copyright 2018 Nagoya University (Tomoki Hayashi)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-. ./path.sh
-. ./cmd.sh
+. ./path.sh || exit 1;
+. ./cmd.sh || exit 1;
 
 # general configuration
 backend=pytorch
@@ -13,19 +13,23 @@ stop_stage=100
 ngpu=1       # number of gpus ("0" uses cpu, otherwise use gpu)
 nj=32        # numebr of parallel jobs
 dumpdir=dump # directory to dump full features
-verbose=0    # verbose option (if set > 0, get more log)
+verbose=1    # verbose option (if set > 0, get more log)
 N=0          # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
 seed=1       # random seed number
 resume=""    # the snapshot path to resume (if set empty, no effect)
 
 # feature extraction related
-fs=22050    # sampling frequency
-fmax=""     # maximum frequency
-fmin=""     # minimum frequency
-n_mels=80   # number of mel basis
-n_fft=1024  # number of fft points
-n_shift=256 # number of shift points
+fs=22050      # sampling frequency
+fmax=7600     # maximum frequency
+fmin=80       # minimum frequency
+n_mels=80     # number of mel basis
+n_fft=1024    # number of fft points
+n_shift=256   # number of shift points
 win_length="" # window length
+
+# char or phn
+# In the case of phn, input transcription is convered to phoneem using https://github.com/Kyubyong/g2p.
+trans_type="char"
 
 # config files
 train_config=conf/train_pytorch_tacotron2+cbhg.yaml
@@ -34,6 +38,7 @@ decode_config=conf/decode.yaml
 # decoding related
 model=model.loss.best
 n_average=0 # if > 0, the model averaged with n_average ckpts will be used instead of model.loss.best
+griffin_lim_iters=64  # the number of iterations of Griffin-Lim
 
 # root directory of db
 db_root=downloads
@@ -49,20 +54,20 @@ set -e
 set -u
 set -o pipefail
 
-train_set="train_no_dev"
-dev_set="dev"
-eval_set="eval"
+train_set="${trans_type}_train_no_dev"
+dev_set="${trans_type}_dev"
+eval_set="${trans_type}_eval"
 
 if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
     echo "stage -1: Data Download"
-    local/download.sh ${db_root}
+    local/data_download.sh ${db_root}
 fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     ### Task dependent. You have to make data the following preparation part by yourself.
     ### But you can utilize Kaldi recipes in most cases
     echo "stage 0: Data preparation"
-    local/data_prep.sh ${db_root}/LJSpeech-1.1 data/train
+    local/data_prep.sh ${db_root}/LJSpeech-1.1 data/train "${trans_type}"
     utils/validate_data_dir.sh --no-feats data/train
 fi
 
@@ -181,7 +186,7 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
            --resume ${resume} \
            --train-json ${tr_json} \
            --valid-json ${dt_json} \
-           --config ${decode_config}
+           --config ${train_config}
 fi
 
 if [ ${n_average} -gt 0 ]; then
@@ -237,6 +242,7 @@ if [ ${stage} -le 6 ] && [ ${stop_stage} -ge 6 ]; then
             --n_fft ${n_fft} \
             --n_shift ${n_shift} \
             --win_length "${win_length}" \
+            --iters ${griffin_lim_iters} \
             ${outdir}_denorm/${name} \
             ${outdir}_denorm/${name}/log \
             ${outdir}_denorm/${name}/wav

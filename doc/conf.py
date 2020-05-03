@@ -32,7 +32,16 @@ sys.path.insert(0, os.path.abspath('../utils'))
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ["sphinx.ext.autodoc", "sphinxarg.ext", "sphinx.ext.mathjax"]
+extensions = [
+    "nbsphinx",
+    "sphinx.ext.autodoc",
+    'sphinx.ext.napoleon',
+    'sphinx.ext.viewcode',
+    "sphinx.ext.mathjax",
+    "sphinx.ext.todo",
+    "sphinxarg.ext",
+    "sphinx_markdown_tables",
+]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -196,3 +205,8 @@ texinfo_documents = [
      author, 'ESPnet', 'One line description of project.',
      'Miscellaneous'),
 ]
+
+autoclass_content = 'both'
+
+# NOTE(kan-bayashi): Do not update outputs in notebook automatically.
+nbsphinx_execute = 'never'

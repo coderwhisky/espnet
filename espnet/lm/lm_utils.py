@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright 2017 Johns Hopkins University (Shinji Watanabe)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -6,17 +6,56 @@
 # This code is ported from the following implementation written in Torch.
 # https://github.com/chainer/chainer/blob/master/examples/ptb/train_ptb_custom_loop.py
 
-from __future__ import division
-from __future__ import print_function
-
 import chainer
+import h5py
 import logging
 import numpy as np
 import os
 import random
 import six
+from tqdm import tqdm
 
 from chainer.training import extension
+
+
+def load_dataset(path, label_dict, outdir=None):
+    """Load and save HDF5 that contains a dataset and stats for LM
+
+    Args:
+        path (str): The path of an input text dataset file
+        label_dict (dict[str, int]):
+            dictionary that maps token label string to its ID number
+        outdir (str): The path of an output dir
+
+    Returns:
+        tuple[list[np.ndarray], int, int]: Tuple of
+            token IDs in np.int32 converted by `read_tokens`
+            the number of tokens by `count_tokens`,
+            and the number of OOVs by `count_tokens`
+    """
+    if outdir is not None:
+        os.makedirs(outdir, exist_ok=True)
+        filename = outdir + "/" + os.path.basename(path) + ".h5"
+        if os.path.exists(filename):
+            logging.info(f"loading binary dataset: {filename}")
+            f = h5py.File(filename, "r")
+            return f["data"][:], f["n_tokens"][()], f["n_oovs"][()]
+    else:
+        logging.info("skip dump/load HDF5 because the output dir is not specified")
+    logging.info(f"reading text dataset: {path}")
+    ret = read_tokens(path, label_dict)
+    n_tokens, n_oovs = count_tokens(ret, label_dict["<unk>"])
+    if outdir is not None:
+        logging.info(f"saving binary dataset: {filename}")
+        with h5py.File(filename, "w") as f:
+            # http://docs.h5py.org/en/stable/special.html#arbitrary-vlen-data
+            data = f.create_dataset(
+                "data", (len(ret),), dtype=h5py.special_dtype(vlen=np.int32)
+            )
+            data[:] = ret
+            f["n_tokens"] = n_tokens
+            f["n_oovs"] = n_oovs
+    return ret, n_tokens, n_oovs
 
 
 def read_tokens(filename, label_dict):
@@ -29,20 +68,26 @@ def read_tokens(filename, label_dict):
     """
 
     data = []
-    for ln in open(filename, 'rb').readlines():
-        data.append(np.array([label_dict[label]
-                              if label in label_dict else label_dict['<unk>']
-                              for label in ln.decode('utf-8').split()], dtype=np.int32))
+    unk = label_dict["<unk>"]
+    for ln in tqdm(open(filename, "r", encoding="utf-8")):
+        data.append(
+            np.array(
+                [label_dict.get(label, unk) for label in ln.split()], dtype=np.int32
+            )
+        )
     return data
 
 
 def count_tokens(data, unk_id=None):
-    """Count tokens and oovs in token ID sequences
+    """Count tokens and oovs in token ID sequences.
 
-    :param list[np.ndarray] data: list of token ID sequences
-    :param int unk_id: ID of unknown token '<unk>'
-    :return number of token occurrences, number of oov tokens
-    :rtype int, int
+    Args:
+        data (list[np.ndarray]): list of token ID sequences
+        unk_id (int): ID of unknown token
+
+    Returns:
+        tuple: tuple of number of token occurrences and number of oov tokens
+
     """
 
     n_tokens = 0
@@ -60,9 +105,9 @@ def compute_perplexity(result):
     :param dict result: The current observations
     """
     # Routine to rewrite the result dictionary of LogReport to add perplexity values
-    result['perplexity'] = np.exp(result['main/loss'] / result['main/count'])
-    if 'validation/main/loss' in result:
-        result['val_perplexity'] = np.exp(result['validation/main/loss'])
+    result["perplexity"] = np.exp(result["main/loss"] / result["main/count"])
+    if "validation/main/loss" in result:
+        result["val_perplexity"] = np.exp(result["validation/main/loss"])
 
 
 class ParallelSentenceIterator(chainer.dataset.Iterator):
@@ -74,7 +119,9 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
        randomly shuffled.
     """
 
-    def __init__(self, dataset, batch_size, max_length=0, sos=0, eos=0, repeat=True, shuffle=True):
+    def __init__(
+        self, dataset, batch_size, max_length=0, sos=0, eos=0, repeat=True, shuffle=True
+    ):
         self.dataset = dataset
         self.batch_size = batch_size  # batch size
         # Number of completed sweeps over the dataset. In this case, it is
@@ -96,7 +143,9 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
                 # is larger than max_length
                 if max_length > 0:
                     sent_length = len(dataset[indices[bs]])
-                    be = min(be, bs + max(batch_size // (sent_length // max_length + 1), 1))
+                    be = min(
+                        be, bs + max(batch_size // (sent_length // max_length + 1), 1)
+                    )
                 self.batch_indices.append(np.array(indices[bs:be]))
                 bs = be
             if shuffle:
@@ -111,7 +160,7 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
         self.sos = sos
         self.eos = eos
         # use -1 instead of None internally
-        self._previous_epoch_detail = -1.
+        self._previous_epoch_detail = -1.0
 
     def __next__(self):
         # This iterator returns a list representing a mini-batch. Each item
@@ -125,8 +174,12 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
 
         batch = []
         for idx in self.batch_indices[self.iteration % n_batches]:
-            batch.append((np.append([self.sos], self.dataset[idx]),
-                          np.append(self.dataset[idx], [self.eos])))
+            batch.append(
+                (
+                    np.append([self.sos], self.dataset[idx]),
+                    np.append(self.dataset[idx], [self.eos]),
+                )
+            )
 
         self._previous_epoch_detail = self.epoch_detail
         self.iteration += 1
@@ -154,19 +207,21 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
 
     def serialize(self, serializer):
         # It is important to serialize the state to be recovered on resume.
-        self.iteration = serializer('iteration', self.iteration)
-        self.epoch = serializer('epoch', self.epoch)
+        self.iteration = serializer("iteration", self.iteration)
+        self.epoch = serializer("epoch", self.epoch)
         try:
             self._previous_epoch_detail = serializer(
-                'previous_epoch_detail', self._previous_epoch_detail)
+                "previous_epoch_detail", self._previous_epoch_detail
+            )
         except KeyError:
             # guess previous_epoch_detail for older version
-            self._previous_epoch_detail = self.epoch + (self.current_position - 1) / len(self.batch_indices)
+            self._previous_epoch_detail = self.epoch + (
+                self.current_position - 1
+            ) / len(self.batch_indices)
             if self.epoch_detail > 0:
-                self._previous_epoch_detail = max(
-                    self._previous_epoch_detail, 0.)
+                self._previous_epoch_detail = max(self._previous_epoch_detail, 0.0)
             else:
-                self._previous_epoch_detail = -1.
+                self._previous_epoch_detail = -1.0
 
 
 class MakeSymlinkToBestModel(extension.Extension):
@@ -177,7 +232,7 @@ class MakeSymlinkToBestModel(extension.Extension):
     :param str suffix: Suffix of link target
     """
 
-    def __init__(self, key, prefix='model', suffix='best'):
+    def __init__(self, key, prefix="model", suffix="best"):
         super(MakeSymlinkToBestModel, self).__init__()
         self.best_model = -1
         self.min_loss = 0.0
@@ -192,26 +247,26 @@ class MakeSymlinkToBestModel(extension.Extension):
             if self.best_model == -1 or loss < self.min_loss:
                 self.min_loss = loss
                 self.best_model = trainer.updater.epoch
-                src = '%s.%d' % (self.prefix, self.best_model)
-                dest = os.path.join(trainer.out, '%s.%s' % (self.prefix, self.suffix))
+                src = "%s.%d" % (self.prefix, self.best_model)
+                dest = os.path.join(trainer.out, "%s.%s" % (self.prefix, self.suffix))
                 if os.path.lexists(dest):
                     os.remove(dest)
                 os.symlink(src, dest)
-                logging.info('best model is ' + src)
+                logging.info("best model is " + src)
 
     def serialize(self, serializer):
         if isinstance(serializer, chainer.serializer.Serializer):
-            serializer('_best_model', self.best_model)
-            serializer('_min_loss', self.min_loss)
-            serializer('_key', self.key)
-            serializer('_prefix', self.prefix)
-            serializer('_suffix', self.suffix)
+            serializer("_best_model", self.best_model)
+            serializer("_min_loss", self.min_loss)
+            serializer("_key", self.key)
+            serializer("_prefix", self.prefix)
+            serializer("_suffix", self.suffix)
         else:
-            self.best_model = serializer('_best_model', -1)
-            self.min_loss = serializer('_min_loss', 0.0)
-            self.key = serializer('_key', '')
-            self.prefix = serializer('_prefix', 'model')
-            self.suffix = serializer('_suffix', 'best')
+            self.best_model = serializer("_best_model", -1)
+            self.min_loss = serializer("_min_loss", 0.0)
+            self.key = serializer("_key", "")
+            self.prefix = serializer("_prefix", "model")
+            self.suffix = serializer("_suffix", "best")
 
 
 # TODO(Hori): currently it only works with character-word level LM.

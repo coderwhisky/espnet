@@ -1,7 +1,7 @@
 #!/bin/bash
 
-. ./path.sh
-. ./cmd.sh
+. ./path.sh || exit 1;
+. ./cmd.sh || exit 1;
 
 # general configuration
 backend=pytorch
@@ -10,7 +10,7 @@ stop_stage=100
 ngpu=1       # number of gpus ("0" uses cpu, otherwise use gpu)
 nj=2         # numebr of parallel jobs
 dumpdir=dump # directory to dump full features
-verbose=0    # verbose option (if set > 0, get more log)
+verbose=1    # verbose option (if set > 0, get more log)
 N=0          # number of minibatches to be used (mainly for debugging). "0" uses all minibatches.
 seed=1       # random seed number
 resume=""    # the snapshot path to resume (if set empty, no effect)
@@ -31,7 +31,7 @@ decode_config=conf/decode.yaml
 # decoding related
 model=model.loss.best
 n_average=0 # if > 0, the model averaged with n_average ckpts will be used instead of model.loss.best
-griffin_lim_iters=1000  # the number of iterations of Griffin-Lim
+griffin_lim_iters=64  # the number of iterations of Griffin-Lim
 
 # exp tag
 tag="" # tag for managing experiments.

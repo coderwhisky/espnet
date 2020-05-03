@@ -1,4 +1,5 @@
-lm-weight: 1.0
+batchsize: 0
+lm-weight: 0.3
 beam-size: 20
 penalty: 0.1
 maxlenratio: 0.0

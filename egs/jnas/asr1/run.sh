@@ -3,8 +3,8 @@
 # Copyright 2019 Nagoya University (Masao Someki)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-. ./path.sh
-. ./cmd.sh
+. ./path.sh || exit 1;
+. ./cmd.sh || exit 1;
 
 # general configuration
 backend=pytorch
@@ -65,13 +65,28 @@ samp_prob=0.0
 jnas_train_root=/database/JNAS                # root directory including original data
 jnas_eval_root=/database/JNAS/DOCS/Test_set   # root directory including test data
 
+# /database/JNAS
+# ├── DOCS/
+# ├── OriginalText/
+# ├── readme_en.txt
+# ├── readme_jp.txt
+# ├── reference_en.pdf
+# ├── reference_jp.pdf
+# ├── Transcription/
+# ├── WAVES_DT/
+# └── WAVES_HS/
+
+# /database/JNAS/DOCS/Test_set
+# ├── ASJ_1998.pdf
+# ├── IPA98_testset_100/
+# ├── JNAS_testset_100/
+# ├── JNAS_testset_500/
+# └── readme.txt
+
 # exp tag
 tag="" # tag for managing experiments.
 
 . utils/parse_options.sh || exit 1;
-
-. ./path.sh
-. ./cmd.sh
 
 # Set bash to 'debug' mode, it will exit on :
 # -e 'error', -u 'undefined variable', -o ... 'error in pipeline', -x 'print commands',

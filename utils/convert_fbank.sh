@@ -1,4 +1,10 @@
 #!/bin/bash
+# Set bash to 'debug' mode, it will exit on :
+# -e 'error', -u 'undefined variable', -o ... 'error in pipeline', -x 'print commands',
+set -e
+set -u
+set -o pipefail
+
 
 # Copyright 2018 Nagoya University (Tomoki Hayashi)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
@@ -12,14 +18,22 @@ n_fft=1024
 n_shift=512
 win_length=
 n_mels=
-iters=1000
+iters=64
 cmd=run.pl
 help_message=$(cat <<EOF
 Usage: $0 [options] <data-dir> [<log-dir> [<fbank-dir>] ]
 e.g.: $0 data/train exp/griffin_lim/train wav
 Note: <log-dir> defaults to <data-dir>/log, and <fbank-dir> defaults to <data-dir>/data
 Options:
-  --nj <nj>                                        # number of parallel jobs
+  --nj <nj>                  # number of parallel jobs
+  --fs <fs>                  # sampling rate
+  --fmax <fmax>              # maximum frequency
+  --fmin <fmin>              # minimum frequency
+  --n_fft <n_fft>            # number of FFT points (default=1024)
+  --n_shift <n_shift>        # shift size in point (default=256)
+  --win_length <win_length>  # window length in point (default=)
+  --n_mels <n_mels>          # number of mel basis (default=80)
+  --iters <iters>            # number of Griffin-lim iterations (default=64)
   --cmd (utils/run.pl|utils/queue.pl <queue opts>) # how to run jobs.
 EOF
 )
@@ -33,6 +47,8 @@ if [ $# -lt 1 ] || [ $# -gt 3 ]; then
     echo "${help_message}"
     exit 1;
 fi
+
+set -euo pipefail
 
 data=$1
 if [ $# -ge 2 ]; then
